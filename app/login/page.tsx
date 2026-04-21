@@ -1,32 +1,26 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { api } from '@/lib/axios';
 import { useAuthStore } from '@/store/auth';
 import { useRouter } from 'next/navigation';
-import { OtpInput } from '@/components/OtpInput';
-import { LanguagePill } from '@/components/LanguagePill';
 import { LANGUAGES } from '@/lib/constants';
-import { Loader2 } from 'lucide-react';
+import { Loader2, AlertCircle } from 'lucide-react';
+import { authService } from '@/lib/apiServices';
+
+type AuthStep = 'phone' | 'password' | 'role' | 'profile';
 
 export default function LoginPage() {
-  const [step, setStep] = useState<'phone' | 'otp'>('phone');
+  const [step, setStep] = useState<AuthStep>('phone');
+  const [isNewUser, setIsNewUser] = useState(false);
   const [phone, setPhone] = useState('');
-  const [otp, setOtp] = useState('');
+  const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
+  const [role, setRole] = useState<'farmer' | 'consumer'>('farmer');
+  const [language, setLanguage] = useState('hi');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [language, setLanguage] = useState('hi');
-  const [countdown, setCountdown] = useState(0);
   const router = useRouter();
   const { setAuth } = useAuthStore();
-
-  useEffect(() => {
-    let timer: NodeJS.Timeout;
-    if (countdown > 0) {
-      timer = setTimeout(() => setCountdown(countdown - 1), 1000);
-    }
-    return () => clearTimeout(timer);
-  }, [countdown]);
 
   const handlePhoneSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,47 +29,98 @@ export default function LoginPage() {
 
     try {
       if (!/^[6-9]\d{9}$/.test(phone)) {
-        setError('कृपया एक मान्य 10-अंकीय भारतीय फोन नंबर दर्ज करें');
+        setError('Please enter a valid 10-digit Indian phone number');
         setLoading(false);
         return;
       }
 
-      await api.post('/auth/send-otp', { phone, language });
-      setStep('otp');
-      setCountdown(30);
-      setOtp('');
+      // Move to password step
+      setStep('password');
     } catch (err: any) {
-      setError(err.response?.data?.message || 'OTP भेजने में विफल। कृपया दोबारा कोशिश करें।');
+      setError('Unable to verify phone number');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleOtpSubmit = async (e: React.FormEvent) => {
+  const handlePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setLoading(true);
 
     try {
-      if (!/^\d{6}$/.test(otp)) {
-        setError('कृपया एक मान्य 6-अंकीय OTP दर्ज करें');
+      const response = await authService.login({ phone, password });
+      
+      // Get current user details
+      const user = await authService.getCurrentUser();
+      
+      setAuth(user, response.access_token);
+      localStorage.setItem('ks_token', response.access_token);
+      router.push('/dashboard');
+    } catch (err: any) {
+      if (err.response?.status === 401) {
+        // User might not exist, treat as new user
+        setIsNewUser(true);
+        setStep('role');
+      } else if (err.response?.status === 404) {
+        setIsNewUser(true);
+        setStep('role');
+      } else {
+        setError(err.response?.data?.detail || 'Login failed. Please try again.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRoleSelect = (selectedRole: 'farmer' | 'consumer') => {
+    setRole(selectedRole);
+    setStep('profile');
+  };
+
+  const handleProfileSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setLoading(true);
+
+    try {
+      if (!name.trim()) {
+        setError('Please enter your name');
         setLoading(false);
         return;
       }
 
-      const response = await api.post('/auth/verify-otp', { phone, otp, language });
-      const { token, user, is_new_user } = response.data;
-
-      setAuth(user, token);
-      document.cookie = `auth-token=${token}; path=/; max-age=${7 * 24 * 60 * 60}`;
-
-      if (is_new_user) {
-        router.push('/onboarding');
-      } else {
-        router.push('/dashboard');
+      if (password.length < 6) {
+        setError('Password must be at least 6 characters');
+        setLoading(false);
+        return;
       }
+
+      // Register user
+      const registerResponse = await authService.register({
+        phone,
+        password,
+        name,
+        role,
+        language_preference: language,
+      });
+
+      setAuth(
+        {
+          id: phone,
+          phone,
+          name,
+          role,
+          language: language,
+        },
+        registerResponse.access_token
+      );
+      localStorage.setItem('ks_token', registerResponse.access_token);
+
+      // Redirect to onboarding for new users
+      router.push('/onboarding');
     } catch (err: any) {
-      setError(err.response?.data?.message || 'OTP सत्यापन विफल। कृपया दोबारा कोशिश करें।');
+      setError(err.response?.data?.detail || 'Registration failed. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -86,8 +131,8 @@ export default function LoginPage() {
       <div className="w-full max-w-md">
         {/* Language Selector */}
         <div className="flex justify-end mb-4">
-          <div className="flex gap-2">
-            {LANGUAGES.slice(0, 3).map((lang) => (
+          <div className="flex gap-2 flex-wrap justify-end">
+            {LANGUAGES.slice(0, 4).map((lang) => (
               <button
                 key={lang.code}
                 onClick={() => setLanguage(lang.code)}
@@ -112,130 +157,202 @@ export default function LoginPage() {
           <p className="text-lg text-primary font-medium">आपका खेत, आपका भविष्य</p>
         </div>
 
+        {/* Error Alert */}
+        {error && (
+          <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4 flex gap-3">
+            <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+            <p className="text-red-800 text-sm">{error}</p>
+          </div>
+        )}
+
         {/* Phone Step */}
         {step === 'phone' && (
           <form onSubmit={handlePhoneSubmit} className="bg-white rounded-2xl shadow-lg p-8 space-y-6">
-            <h2 className="text-2xl font-bold text-foreground">अपना फोन नंबर दर्ज करें</h2>
+            <h2 className="text-2xl font-bold text-foreground">Enter Your Phone Number</h2>
             
             <div>
-              <label className="block text-base font-semibold text-foreground mb-3">
-                फोन नंबर
-              </label>
-              <div className="flex gap-0">
-                <span className="flex items-center px-4 bg-muted border-2 border-r-0 border-border rounded-l-lg text-foreground font-bold text-lg">
-                  +91
-                </span>
+              <label className="block text-sm font-medium text-foreground mb-2">Phone Number</label>
+              <div className="flex items-center">
+                <span className="text-lg text-muted-text mr-2">+91</span>
                 <input
                   type="tel"
+                  placeholder="98765 43210"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                  placeholder="90000 00000"
-                  className="flex-1 px-4 py-3 text-lg border-2 border-border rounded-r-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                  className="flex-1 px-4 py-3 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                  disabled={loading}
                   maxLength={10}
-                  autoComplete="tel"
+                  autoFocus
                 />
               </div>
-              <p className="text-base text-muted-foreground mt-2">हम आपके नंबर को सत्यापित करने के लिए OTP भेजेंगे</p>
+              <p className="text-sm text-muted-text mt-2">We'll verify it with a password</p>
             </div>
-
-            {error && (
-              <div className="bg-red-50 border-2 border-red-300 text-red-700 px-4 py-3 rounded-lg text-base font-medium">
-                {error}
-              </div>
-            )}
 
             <button
               type="submit"
-              disabled={!phone || loading}
-              className="w-full h-14 bg-primary hover:bg-secondary text-white font-bold text-lg rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+              disabled={loading || phone.length !== 10}
+              className="w-full bg-primary text-white py-3 rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-primary/90 transition flex items-center justify-center gap-2"
             >
-              {loading ? (
-                <>
-                  <Loader2 size={20} className="animate-spin" />
-                  OTP भेज रहे हैं...
-                </>
-              ) : (
-                'OTP भेजें'
-              )}
+              {loading && <Loader2 className="w-4 h-4 animate-spin" />}
+              Continue
             </button>
 
-            <p className="text-center text-base text-muted-foreground">
-              जारी रखने से, आप हमारी शर्तों और गोपनीयता नीति से सहमत हैं
+            <p className="text-center text-sm text-muted-text">
+              New to KisaanSathi? We'll create your account
             </p>
           </form>
         )}
 
-        {/* OTP Step */}
-        {step === 'otp' && (
-          <form onSubmit={handleOtpSubmit} className="bg-white rounded-2xl shadow-lg p-8 space-y-6">
+        {/* Password Step */}
+        {step === 'password' && (
+          <form onSubmit={handlePasswordSubmit} className="bg-white rounded-2xl shadow-lg p-8 space-y-6">
             <div>
-              <h2 className="text-2xl font-bold text-foreground mb-2">अपना OTP दर्ज करें</h2>
-              <p className="text-lg text-muted-foreground">
-                हमने +91{phone.slice(-10)} पर एक 6-अंकीय कोड भेजा है
-              </p>
+              <h2 className="text-2xl font-bold text-foreground mb-2">Enter Your Password</h2>
+              <p className="text-sm text-muted-text">+91 {phone}</p>
             </div>
 
             <div>
-              <label className="block text-base font-semibold text-foreground mb-4">
-                एक समय का पासवर्ड
-              </label>
-              <OtpInput
-                value={otp}
-                onChange={setOtp}
-                onComplete={() => setOtp(otp)} // Allow auto-submit on complete if needed
+              <label className="block text-sm font-medium text-foreground mb-2">Password</label>
+              <input
+                type="password"
+                placeholder="••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full px-4 py-3 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                disabled={loading}
+                autoFocus
               />
+              <p className="text-xs text-muted-text mt-2">At least 6 characters</p>
             </div>
-
-            {error && (
-              <div className="bg-red-50 border-2 border-red-300 text-red-700 px-4 py-3 rounded-lg text-base font-medium">
-                {error}
-              </div>
-            )}
 
             <button
               type="submit"
-              disabled={otp.length < 6 || loading}
-              className="w-full h-14 bg-primary hover:bg-secondary text-white font-bold text-lg rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+              disabled={loading || password.length < 6}
+              className="w-full bg-primary text-white py-3 rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-primary/90 transition flex items-center justify-center gap-2"
             >
-              {loading ? (
-                <>
-                  <Loader2 size={20} className="animate-spin" />
-                  सत्यापन...
-                </>
-              ) : (
-                'सत्यापित करें & जारी रखें'
-              )}
+              {loading && <Loader2 className="w-4 h-4 animate-spin" />}
+              {loading ? 'Logging in...' : 'Login'}
             </button>
 
-            <div className="flex items-center gap-4 text-base">
+            <button
+              type="button"
+              onClick={() => {
+                setStep('phone');
+                setPassword('');
+                setError(null);
+              }}
+              className="w-full text-primary font-semibold py-2 hover:underline"
+            >
+              Use Different Phone Number
+            </button>
+          </form>
+        )}
+
+        {/* Role Selection Step */}
+        {step === 'role' && (
+          <div className="bg-white rounded-2xl shadow-lg p-8 space-y-6">
+            <h2 className="text-2xl font-bold text-foreground">Who are you?</h2>
+            <p className="text-sm text-muted-text">Choose your role to get started</p>
+
+            <div className="space-y-3">
               <button
-                type="button"
-                onClick={() => {
-                  setStep('phone');
-                  setOtp('');
-                  setError(null);
-                  setCountdown(0);
-                }}
-                className="text-primary font-semibold hover:underline"
-              >
-                नंबर बदलें
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setCountdown(30);
-                  handlePhoneSubmit({ preventDefault: () => {} } as any);
-                }}
-                disabled={countdown > 0}
-                className={`font-semibold ml-auto ${
-                  countdown > 0
-                    ? 'text-muted-foreground cursor-not-allowed'
-                    : 'text-primary hover:underline'
+                onClick={() => handleRoleSelect('farmer')}
+                className={`w-full p-6 rounded-xl border-2 transition text-left ${
+                  role === 'farmer'
+                    ? 'border-primary bg-primary/5'
+                    : 'border-border hover:border-primary/50'
                 }`}
               >
-                {countdown > 0 ? `${countdown}s में दोबारा भेजें` : 'OTP दोबारा भेजें'}
+                <div className="text-3xl mb-2">🌾</div>
+                <h3 className="font-semibold text-foreground">Farmer</h3>
+                <p className="text-sm text-muted-text mt-1">Grow, sell, and learn farming techniques</p>
+              </button>
+
+              <button
+                onClick={() => handleRoleSelect('consumer')}
+                className={`w-full p-6 rounded-xl border-2 transition text-left ${
+                  role === 'consumer'
+                    ? 'border-primary bg-primary/5'
+                    : 'border-border hover:border-primary/50'
+                }`}
+              >
+                <div className="text-3xl mb-2">🛍️</div>
+                <h3 className="font-semibold text-foreground">Consumer</h3>
+                <p className="text-sm text-muted-text mt-1">Buy fresh produce directly from farmers</p>
               </button>
             </div>
+
+            <button
+              onClick={() => {
+                setStep('phone');
+                setRole('farmer');
+                setPassword('');
+              }}
+              className="w-full text-primary font-semibold py-2 hover:underline"
+            >
+              Use Different Phone Number
+            </button>
+          </div>
+        )}
+
+        {/* Profile Creation Step */}
+        {step === 'profile' && (
+          <form onSubmit={handleProfileSubmit} className="bg-white rounded-2xl shadow-lg p-8 space-y-6">
+            <h2 className="text-2xl font-bold text-foreground">Create Your Profile</h2>
+
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-2">Full Name</label>
+              <input
+                type="text"
+                placeholder="Your full name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="w-full px-4 py-3 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                disabled={loading}
+                autoFocus
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-2">Password</label>
+              <input
+                type="password"
+                placeholder="••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full px-4 py-3 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                disabled={loading}
+              />
+              <p className="text-xs text-muted-text mt-2">At least 6 characters, secure your account</p>
+            </div>
+
+            <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+              <p className="text-sm text-blue-900">
+                <span className="font-semibold">Role: {role === 'farmer' ? '🌾 Farmer' : '🛍️ Consumer'}</span>
+                <br />
+                Phone: +91 {phone}
+              </p>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading || !name.trim() || password.length < 6}
+              className="w-full bg-primary text-white py-3 rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-primary/90 transition flex items-center justify-center gap-2"
+            >
+              {loading && <Loader2 className="w-4 h-4 animate-spin" />}
+              {loading ? 'Creating Account...' : 'Create Account'}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setStep('role');
+                setName('');
+              }}
+              className="w-full text-primary font-semibold py-2 hover:underline"
+            >
+              Back
+            </button>
           </form>
         )}
       </div>

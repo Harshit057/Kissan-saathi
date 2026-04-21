@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { useAuthStore } from '@/store/auth';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
@@ -13,7 +13,17 @@ export const api = axios.create({
 // Request interceptor to add auth token
 api.interceptors.request.use(
   (config) => {
-    const token = useAuthStore.getState().token;
+    let token: string | null = null;
+    if (typeof window !== 'undefined') {
+      token = localStorage.getItem('ks_token');
+    }
+    if (!token) {
+      try {
+        token = useAuthStore.getState().token;
+      } catch (e) {
+        // Store might not be initialized
+      }
+    }
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }

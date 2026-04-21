@@ -1,494 +1,463 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuthStore } from '@/store/auth';
-import { apiPost, apiDelete } from '@/lib/api';
-import { CROPS } from '@/lib/constants';
-import { CameraCapture } from '@/components/CameraCapture';
-import { Plus, Edit2, Trash2, Zap, Calendar } from 'lucide-react';
+import { useFarmerStore } from '@/store/farmer';
+import { Plus, Edit2, Trash2, AlertCircle, Loader2, Check } from 'lucide-react';
+import Link from 'next/link';
+import { farmerService } from '@/lib/apiServices';
 
-interface Crop {
-  id: string;
-  name: string;
+interface CropFormData {
+  crop_name: string;
   variety: string;
-  area: number;
-  sowing_date: string;
-  expected_harvest: string;
-  status: 'planning' | 'growing' | 'harvested';
-  notes: string;
-  photo_url?: string;
-}
-
-interface DiseaseDetection {
-  disease: string;
-  confidence: number;
-  treatment: string;
-  prevention: string;
+  quantity_kg: number;
+  price_per_kg: number;
+  sowing_date?: string;
+  harvest_date?: string;
+  is_organic: boolean;
+  description?: string;
 }
 
 export default function CropsPage() {
   const { user } = useAuthStore();
-  const [crops, setCrops] = useState<Crop[]>([
-    {
-      id: '1',
-      name: 'गेहूँ',
-      variety: 'WH 147',
-      area: 2.5,
-      sowing_date: '2024-10-15',
-      expected_harvest: '2025-03-15',
-      status: 'growing',
-      notes: 'अगले हफ्ते सिंचाई निर्धारित है',
-    },
-  ]);
-
+  const { crops, isLoading, fetchCrops, createCrop, updateCrop, markCropReady, markCropSold } = useFarmerStore();
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [showDiseaseModal, setShowDiseaseModal] = useState(false);
-  const [selectedCropForDisease, setSelectedCropForDisease] = useState<string | null>(null);
-  const [diseaseFile, setDiseaseFile] = useState<File | null>(null);
-  const [diseaseResult, setDiseaseResult] = useState<DiseaseDetection | null>(null);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [submitLoading, setSubmitLoading] = useState(false);
+  const [filterStatus, setFilterStatus] = useState<string>('all');
 
-  const [formData, setFormData] = useState<Partial<Crop>>({
-    name: '',
+  const [formData, setFormData] = useState<CropFormData>({
+    crop_name: '',
     variety: '',
-    area: 0,
-    sowing_date: '',
-    expected_harvest: '',
-    status: 'planning',
-    notes: '',
+    quantity_kg: 0,
+    price_per_kg: 0,
+    is_organic: false,
   });
+
+  // Fetch crops on mount
+  useEffect(() => {
+    if (user?.id) {
+      fetchCrops(user.id);
+    }
+  }, [user?.id, fetchCrops]);
+
+  // Clear messages after 5 seconds
+  useEffect(() => {
+    if (error || success) {
+      const timer = setTimeout(() => {
+        setError(null);
+        setSuccess(null);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [error, success]);
 
   const handleAddClick = () => {
     setEditingId(null);
     setFormData({
-      name: '',
+      crop_name: '',
       variety: '',
-      area: 0,
-      sowing_date: '',
-      expected_harvest: '',
-      status: 'planning',
-      notes: '',
+      quantity_kg: 0,
+      price_per_kg: 0,
+      is_organic: false,
     });
     setShowForm(true);
   };
 
-  const handleEditClick = (crop: Crop) => {
+  const handleEditClick = (crop: any) => {
     setEditingId(crop.id);
-    setFormData(crop);
+    setFormData({
+      crop_name: crop.crop_name,
+      variety: crop.variety,
+      quantity_kg: crop.quantity_kg,
+      price_per_kg: crop.price_per_kg,
+      sowing_date: crop.sowing_date,
+      harvest_date: crop.harvest_date,
+      is_organic: crop.is_organic,
+      description: crop.description,
+    });
     setShowForm(true);
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('क्या आप इस फसल को हटाना सुनिश्चित हैं?')) return;
-    setLoading(true);
+  const handleDeleteCrop = async (cropId: string) => {
+    if (!confirm('Are you sure you want to delete this crop?')) return;
+
+    setSubmitLoading(true);
     try {
-      await apiDelete(`/crops/${id}`);
-      setCrops(crops.filter((c) => c.id !== id));
+      await farmerService.deleteCrop(cropId);
+      if (user?.id) {
+        await fetchCrops(user.id);
+      }
+      setSuccess('Crop deleted successfully');
     } catch (err: any) {
-      setError('फसल हटाने में विफल');
+      setError(err.response?.data?.detail || 'Failed to delete crop');
     } finally {
-      setLoading(false);
+      setSubmitLoading(false);
+    }
+  };
+
+  const handleMarkReady = async (cropId: string) => {
+    setSubmitLoading(true);
+    try {
+      await markCropReady(cropId);
+      setSuccess('Crop marked as ready! Now listed on the marketplace.');
+    } catch (err: any) {
+      setError(err.message || 'Failed to mark crop ready');
+    } finally {
+      setSubmitLoading(false);
+    }
+  };
+
+  const handleMarkSold = async (cropId: string) => {
+    setSubmitLoading(true);
+    try {
+      await markCropSold(cropId);
+      setSuccess('Crop marked as sold');
+    } catch (err: any) {
+      setError(err.message || 'Failed to mark crop sold');
+    } finally {
+      setSubmitLoading(false);
     }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    setLoading(true);
-
-    try {
-      if (editingId) {
-        await apiPost(`/crops/${editingId}`, formData);
-        setCrops(crops.map((c) => (c.id === editingId ? { ...c, ...formData } as Crop : c)));
-      } else {
-        const newCrop = { ...formData, id: Date.now().toString() } as Crop;
-        setCrops([...crops, newCrop]);
-        await apiPost('/crops', formData);
-      }
-      setShowForm(false);
-    } catch (err: any) {
-      setError(err.message || 'विफल');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleDiseaseDetection = async () => {
-    if (!diseaseFile || !selectedCropForDisease) {
-      setError('कृपया एक फसल चुनें और फोटो अपलोड करें');
+    
+    if (!formData.crop_name || !formData.variety || formData.quantity_kg <= 0 || formData.price_per_kg <= 0) {
+      setError('Please fill in all required fields');
       return;
     }
 
-    setLoading(true);
-    const formData = new FormData();
-    formData.append('image', diseaseFile);
-    formData.append('crop_id', selectedCropForDisease);
-
+    setSubmitLoading(true);
     try {
-      const result = await apiPost<DiseaseDetection>('/crops/detect-disease', formData);
-      setDiseaseResult(result);
+      if (editingId) {
+        await updateCrop(editingId, formData);
+        setSuccess('Crop updated successfully');
+      } else {
+        await createCrop(user?.id || '', formData);
+        setSuccess('Crop added successfully');
+      }
+      setShowForm(false);
+      setFormData({
+        crop_name: '',
+        variety: '',
+        quantity_kg: 0,
+        price_per_kg: 0,
+        is_organic: false,
+      });
     } catch (err: any) {
-      setError('रोग पहचान में विफल। कृपया दोबारा कोशिश करें।');
+      setError(err.response?.data?.detail || 'Failed to save crop');
     } finally {
-      setLoading(false);
+      setSubmitLoading(false);
     }
   };
 
-  const calculateDaysUntilHarvest = (harvestDate: string) => {
-    const today = new Date();
-    const harvest = new Date(harvestDate);
-    const days = Math.ceil((harvest.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-    return Math.max(0, days);
-  };
+  const filteredCrops = filterStatus === 'all' 
+    ? crops 
+    : crops.filter(crop => crop.status === filterStatus);
 
   return (
-    <div className="max-w-6xl mx-auto p-4 md:p-6">
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
+    <div className="p-4 md:p-6 space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl md:text-4xl font-bold text-foreground">मेरी फसलें</h1>
-          <p className="text-lg text-muted-foreground mt-1">{crops.length} फसलें ट्रैक करें</p>
+          <h1 className="text-3xl font-bold text-foreground">Your Crops</h1>
+          <p className="text-muted-text">Manage your crop inventory and marketplace listings</p>
         </div>
-        <div className="flex flex-wrap gap-3">
-          <button
-            onClick={handleAddClick}
-            className="flex items-center gap-2 h-14 px-6 bg-primary hover:bg-secondary text-white font-bold rounded-lg transition text-lg"
-          >
-            <Plus size={24} />
-            नई फसल
-          </button>
-          <button
-            onClick={() => {
-              setShowDiseaseModal(true);
-              setDiseaseResult(null);
-            }}
-            className="flex items-center gap-2 h-14 px-6 bg-accent hover:bg-accent/90 text-white font-bold rounded-lg transition text-lg"
-          >
-            <Zap size={24} />
-            रोग जाँचें
-          </button>
-        </div>
+        <button
+          onClick={handleAddClick}
+          className="flex items-center gap-2 bg-primary text-white px-4 py-2 rounded-lg hover:bg-primary-dark transition-colors"
+        >
+          <Plus className="w-5 h-5" />
+          Add Crop
+        </button>
       </div>
 
+      {/* Messages */}
       {error && (
-        <div className="bg-red-50 border-2 border-red-300 text-red-700 px-4 py-3 rounded-lg mb-6 text-base">
-          {error}
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+          <p className="text-red-800">{error}</p>
         </div>
       )}
 
-      {/* Add/Edit Form */}
+      {success && (
+        <div className="bg-green-50 border border-green-200 rounded-lg p-4 flex items-start gap-3">
+          <Check className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+          <p className="text-green-800">{success}</p>
+        </div>
+      )}
+
+      {/* Filter Tabs */}
+      <div className="flex gap-2 flex-wrap">
+        {['all', 'planning', 'growing', 'ready', 'sold'].map(status => (
+          <button
+            key={status}
+            onClick={() => setFilterStatus(status)}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+              filterStatus === status
+                ? 'bg-primary text-white'
+                : 'bg-muted text-foreground hover:bg-muted/80'
+            }`}
+          >
+            {status.charAt(0).toUpperCase() + status.slice(1)}
+          </button>
+        ))}
+      </div>
+
+      {/* Form Modal */}
       {showForm && (
-        <div className="bg-white rounded-lg shadow-sm p-6 mb-8">
-          <h2 className="text-2xl font-bold text-foreground mb-6">
-            {editingId ? 'फसल संपादित करें' : 'नई फसल जोड़ें'}
-          </h2>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full max-h-[90vh] overflow-y-auto">
+            <h2 className="text-xl font-bold text-foreground mb-4">
+              {editingId ? 'Edit Crop' : 'Add New Crop'}
+            </h2>
 
-          <form onSubmit={handleSubmit} className="space-y-5">
-            <div className="grid md:grid-cols-2 gap-5">
+            <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className="block text-base font-semibold text-foreground mb-2">
-                  फसल का नाम *
-                </label>
-                <select
-                  required
-                  value={formData.name || ''}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full px-4 py-3 text-base border-2 border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
-                >
-                  <option value="">चुनें...</option>
-                  {CROPS.map((crop) => (
-                    <option key={crop} value={crop}>
-                      {crop}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-base font-semibold text-foreground mb-2">
-                  किस्म
+                <label className="block text-sm font-medium text-foreground mb-1">
+                  Crop Name *
                 </label>
                 <input
                   type="text"
-                  value={formData.variety || ''}
+                  value={formData.crop_name}
+                  onChange={(e) => setFormData({ ...formData, crop_name: e.target.value })}
+                  placeholder="e.g., Wheat"
+                  className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-1">
+                  Variety *
+                </label>
+                <input
+                  type="text"
+                  value={formData.variety}
                   onChange={(e) => setFormData({ ...formData, variety: e.target.value })}
-                  className="w-full px-4 py-3 text-base border-2 border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
-                  placeholder="उदाहरण: WH 147"
-                />
-              </div>
-            </div>
-
-            <div className="grid md:grid-cols-3 gap-5">
-              <div>
-                <label className="block text-base font-semibold text-foreground mb-2">
-                  क्षेत्र (हेक्टेयर) *
-                </label>
-                <input
-                  type="number"
-                  required
-                  min="0.1"
-                  step="0.1"
-                  value={formData.area || ''}
-                  onChange={(e) => setFormData({ ...formData, area: parseFloat(e.target.value) })}
-                  className="w-full px-4 py-3 text-base border-2 border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                  placeholder="e.g., WH 147"
+                  className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
                 />
               </div>
 
-              <div>
-                <label className="block text-base font-semibold text-foreground mb-2">
-                  बुवाई की तारीख *
-                </label>
-                <input
-                  type="date"
-                  required
-                  value={formData.sowing_date || ''}
-                  onChange={(e) => setFormData({ ...formData, sowing_date: e.target.value })}
-                  className="w-full px-4 py-3 text-base border-2 border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
-                />
-              </div>
-
-              <div>
-                <label className="block text-base font-semibold text-foreground mb-2">
-                  कटाई की अपेक्षित तारीख *
-                </label>
-                <input
-                  type="date"
-                  required
-                  value={formData.expected_harvest || ''}
-                  onChange={(e) => setFormData({ ...formData, expected_harvest: e.target.value })}
-                  className="w-full px-4 py-3 text-base border-2 border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-base font-semibold text-foreground mb-2">
-                स्थिति
-              </label>
-              <select
-                value={formData.status || 'planning'}
-                onChange={(e) =>
-                  setFormData({ ...formData, status: e.target.value as any })
-                }
-                className="w-full px-4 py-3 text-base border-2 border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
-              >
-                <option value="planning">योजना बना रहे हैं</option>
-                <option value="growing">बढ़ रहा है</option>
-                <option value="harvested">कटाई की गई</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-base font-semibold text-foreground mb-2">
-                नोट्स
-              </label>
-              <textarea
-                value={formData.notes || ''}
-                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                className="w-full px-4 py-3 text-base border-2 border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
-                rows={3}
-                placeholder="कोई विशेष जानकारी..."
-              />
-            </div>
-
-            <div className="flex gap-3">
-              <button
-                type="submit"
-                disabled={loading || !formData.name || !formData.sowing_date || !formData.expected_harvest}
-                className="flex-1 h-14 bg-primary hover:bg-secondary text-white font-bold text-lg rounded-lg disabled:opacity-50 transition"
-              >
-                {editingId ? 'अपडेट करें' : 'जोड़ें'}
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowForm(false)}
-                className="flex-1 h-14 bg-gray-200 hover:bg-gray-300 text-foreground font-bold text-lg rounded-lg transition"
-              >
-                रद्द करें
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {/* Disease Detection Modal */}
-      {showDiseaseModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 rounded-lg">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full max-h-96 overflow-y-auto">
-            <h2 className="text-2xl font-bold text-foreground mb-4">रोग की पहचान करें</h2>
-
-            {!diseaseResult ? (
-              <>
-                <div className="mb-4">
-                  <label className="block text-base font-semibold text-foreground mb-2">
-                    फसल चुनें *
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1">
+                    Quantity (kg) *
                   </label>
-                  <select
-                    value={selectedCropForDisease || ''}
-                    onChange={(e) => setSelectedCropForDisease(e.target.value)}
-                    className="w-full px-4 py-3 text-base border-2 border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
-                  >
-                    <option value="">चुनें...</option>
-                    {crops.map((crop) => (
-                      <option key={crop.id} value={crop.id}>
-                        {crop.name}
-                      </option>
-                    ))}
-                  </select>
+                  <input
+                    type="number"
+                    value={formData.quantity_kg}
+                    onChange={(e) => setFormData({ ...formData, quantity_kg: parseFloat(e.target.value) })}
+                    placeholder="0"
+                    className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
                 </div>
 
-                <label className="block text-base font-semibold text-foreground mb-3">
-                  रोगी पत्ती की तस्वीर *
-                </label>
-                <CameraCapture
-                  onCapture={(file) => setDiseaseFile(file)}
-                  label="फोटो जोड़ें"
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1">
+                    Price (₹/kg) *
+                  </label>
+                  <input
+                    type="number"
+                    value={formData.price_per_kg}
+                    onChange={(e) => setFormData({ ...formData, price_per_kg: parseFloat(e.target.value) })}
+                    placeholder="0"
+                    className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1">
+                    Sowing Date
+                  </label>
+                  <input
+                    type="date"
+                    value={formData.sowing_date || ''}
+                    onChange={(e) => setFormData({ ...formData, sowing_date: e.target.value })}
+                    className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1">
+                    Harvest Date
+                  </label>
+                  <input
+                    type="date"
+                    value={formData.harvest_date || ''}
+                    onChange={(e) => setFormData({ ...formData, harvest_date: e.target.value })}
+                    className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </div>
+              </div>
+
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={formData.is_organic}
+                  onChange={(e) => setFormData({ ...formData, is_organic: e.target.checked })}
+                  className="w-4 h-4"
                 />
+                <span className="text-sm font-medium text-foreground">Organic Crop</span>
+              </label>
 
-                <div className="flex gap-3 mt-4">
-                  <button
-                    onClick={handleDiseaseDetection}
-                    disabled={loading || !diseaseFile || !selectedCropForDisease}
-                    className="flex-1 h-14 bg-accent hover:bg-accent/90 text-white font-bold rounded-lg disabled:opacity-50 transition"
-                  >
-                    {loading ? 'विश्लेषण...' : 'विश्लेषण करें'}
-                  </button>
-                  <button
-                    onClick={() => {
-                      setShowDiseaseModal(false);
-                      setDiseaseFile(null);
-                      setSelectedCropForDisease(null);
-                    }}
-                    className="flex-1 h-14 bg-gray-200 hover:bg-gray-300 text-foreground font-bold rounded-lg transition"
-                  >
-                    बंद करें
-                  </button>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="space-y-4">
-                  <div className="p-4 bg-yellow-50 border-2 border-yellow-300 rounded-lg">
-                    <h3 className="font-bold text-lg text-yellow-900">{diseaseResult.disease}</h3>
-                    <p className="text-base text-yellow-800 mt-1">
-                      विश्वास: {(diseaseResult.confidence * 100).toFixed(1)}%
-                    </p>
-                  </div>
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-1">
+                  Description
+                </label>
+                <textarea
+                  value={formData.description || ''}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  placeholder="Add any notes or details about this crop"
+                  className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                  rows={3}
+                />
+              </div>
 
-                  <div className="p-4 bg-blue-50 border-2 border-blue-300 rounded-lg">
-                    <h4 className="font-bold text-foreground mb-2">इलाज:</h4>
-                    <p className="text-base text-foreground">{diseaseResult.treatment}</p>
-                  </div>
-
-                  <div className="p-4 bg-green-50 border-2 border-green-300 rounded-lg">
-                    <h4 className="font-bold text-foreground mb-2">रोकथाम:</h4>
-                    <p className="text-base text-foreground">{diseaseResult.prevention}</p>
-                  </div>
-                </div>
-
+              <div className="flex gap-2 pt-4">
                 <button
-                  onClick={() => {
-                    setShowDiseaseModal(false);
-                    setDiseaseResult(null);
-                    setDiseaseFile(null);
-                    setSelectedCropForDisease(null);
-                  }}
-                  className="w-full h-14 bg-primary hover:bg-secondary text-white font-bold rounded-lg transition mt-4"
+                  type="button"
+                  onClick={() => setShowForm(false)}
+                  className="flex-1 px-4 py-2 border border-border rounded-lg text-foreground hover:bg-muted transition-colors"
                 >
-                  बंद करें
+                  Cancel
                 </button>
-              </>
-            )}
+                <button
+                  type="submit"
+                  disabled={submitLoading}
+                  className="flex-1 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {submitLoading && <Loader2 className="w-4 h-4 animate-spin" />}
+                  {editingId ? 'Update' : 'Add'} Crop
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
 
-      {/* Crops Grid */}
-      <div className="grid gap-6">
-        {crops.map((crop) => {
-          const daysUntilHarvest = calculateDaysUntilHarvest(crop.expected_harvest);
-          const harvestPercentage = Math.min(
-            100,
-            ((new Date(crop.sowing_date).getTime() - new Date().getTime()) /
-              (new Date(crop.expected_harvest).getTime() - new Date(crop.sowing_date).getTime())) *
-              100
-          );
-
-          return (
-            <div
-              key={crop.id}
-              className="bg-white rounded-lg shadow-sm p-6 border-l-4 border-primary hover:shadow-md transition"
-            >
-              <div className="flex items-start justify-between mb-4">
-                <div className="flex-1">
-                  <h3 className="text-2xl font-bold text-foreground mb-2">{crop.name}</h3>
-                  <p className="text-lg text-muted-foreground">
-                    {crop.variety && `किस्म: ${crop.variety}`} • क्षेत्र: {crop.area} हे.
-                  </p>
-                  <p className="text-base text-muted-foreground mt-1">{crop.notes}</p>
+      {/* Crops List */}
+      {isLoading ? (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+          <span className="ml-2 text-muted-text">Loading your crops...</span>
+        </div>
+      ) : filteredCrops.length === 0 ? (
+        <div className="text-center py-12 bg-muted rounded-lg">
+          <p className="text-muted-text mb-4">No crops found</p>
+          <button
+            onClick={handleAddClick}
+            className="inline-flex items-center gap-2 bg-primary text-white px-4 py-2 rounded-lg hover:bg-primary-dark transition-colors"
+          >
+            <Plus className="w-5 h-5" />
+            Add Your First Crop
+          </button>
+        </div>
+      ) : (
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filteredCrops.map((crop) => (
+            <div key={crop.id} className="bg-white border border-border rounded-lg p-4 hover:shadow-md transition-shadow">
+              {/* Status Badge */}
+              <div className="flex items-start justify-between mb-3">
+                <div>
+                  <h3 className="font-bold text-foreground text-lg">{crop.crop_name}</h3>
+                  <p className="text-xs text-muted-text">{crop.variety}</p>
                 </div>
-                <div className="text-right">
-                  <div className="inline-block px-4 py-2 rounded-full text-base font-bold mb-2 bg-primary/20 text-primary">
-                    {crop.status === 'planning'
-                      ? 'योजना'
-                      : crop.status === 'growing'
-                        ? 'बढ़ रहा है'
-                        : 'कटाई'}
-                  </div>
-                </div>
+                <span className={`text-xs px-2 py-1 rounded-full font-medium whitespace-nowrap ${
+                  crop.status === 'ready' ? 'bg-green-100 text-green-800' :
+                  crop.status === 'growing' ? 'bg-blue-100 text-blue-800' :
+                  crop.status === 'sold' ? 'bg-gray-100 text-gray-800' :
+                  'bg-yellow-100 text-yellow-800'
+                }`}>
+                  {crop.status.charAt(0).toUpperCase() + crop.status.slice(1)}
+                </span>
               </div>
 
-              {crop.status !== 'harvested' && (
-                <div className="mb-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="flex items-center gap-2 text-base font-semibold text-foreground">
-                      <Calendar size={18} />
-                      कटाई में {daysUntilHarvest} दिन बाकी
-                    </span>
-                    <span className="text-sm text-muted-foreground">{harvestPercentage.toFixed(0)}%</span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-3">
-                    <div
-                      className="bg-primary h-3 rounded-full transition-all"
-                      style={{ width: `${harvestPercentage}%` }}
-                    ></div>
-                  </div>
+              {/* Info Grid */}
+              <div className="space-y-2 mb-4 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-muted-text">Quantity:</span>
+                  <span className="font-medium">{crop.quantity_kg} kg</span>
                 </div>
-              )}
+                <div className="flex justify-between">
+                  <span className="text-muted-text">Price:</span>
+                  <span className="font-medium">₹{crop.price_per_kg}/kg</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-text">Total Value:</span>
+                  <span className="font-medium">₹{(crop.quantity_kg * crop.price_per_kg).toFixed(0)}</span>
+                </div>
+                {crop.harvest_date && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-text">Harvest:</span>
+                    <span className="font-medium">{new Date(crop.harvest_date).toLocaleDateString()}</span>
+                  </div>
+                )}
+                {crop.is_organic && (
+                  <div className="inline-block bg-green-50 text-green-700 text-xs px-2 py-1 rounded font-medium">
+                    🌿 Organic
+                  </div>
+                )}
+              </div>
 
-              <div className="flex flex-wrap gap-3">
-                <button
-                  onClick={() => handleEditClick(crop)}
-                  className="flex items-center gap-2 px-4 py-3 bg-accent/20 hover:bg-accent/30 text-accent font-bold rounded-lg transition text-base"
-                >
-                  <Edit2 size={20} />
-                  संपादित करें
-                </button>
+              {/* Actions */}
+              <div className="space-y-2">
+                {crop.status === 'growing' && (
+                  <button
+                    onClick={() => handleMarkReady(crop.id)}
+                    disabled={submitLoading}
+                    className="w-full py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {submitLoading && <Loader2 className="w-4 h-4 animate-spin" />}
+                    Mark Ready
+                  </button>
+                )}
 
-                <button
-                  onClick={() => {
-                    setSelectedCropForDisease(crop.id);
-                    setShowDiseaseModal(true);
-                  }}
-                  className="flex items-center gap-2 px-4 py-3 bg-yellow-100 hover:bg-yellow-200 text-yellow-700 font-bold rounded-lg transition text-base"
-                >
-                  <Zap size={20} />
-                  रोग जाँचें
-                </button>
+                {crop.status === 'ready' && (
+                  <button
+                    onClick={() => handleMarkSold(crop.id)}
+                    disabled={submitLoading}
+                    className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {submitLoading && <Loader2 className="w-4 h-4 animate-spin" />}
+                    Mark Sold
+                  </button>
+                )}
 
-                <button
-                  onClick={() => handleDelete(crop.id)}
-                  className="flex items-center gap-2 px-4 py-3 bg-red-100 hover:bg-red-200 text-red-700 font-bold rounded-lg transition text-base ml-auto"
-                >
-                  <Trash2 size={20} />
-                  हटाएं
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleEditClick(crop)}
+                    className="flex-1 py-2 border border-border text-foreground text-sm font-medium rounded-lg hover:bg-muted transition-colors flex items-center justify-center gap-1"
+                  >
+                    <Edit2 className="w-4 h-4" />
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => handleDeleteCrop(crop.id)}
+                    disabled={submitLoading}
+                    className="flex-1 py-2 border border-red-300 text-red-600 text-sm font-medium rounded-lg hover:bg-red-50 transition-colors disabled:opacity-50 flex items-center justify-center gap-1"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    Delete
+                  </button>
+                </div>
+
+                <Link href={`/crops/${crop.id}`}>
+                  <button className="w-full py-2 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary-dark transition-colors">
+                    View Details
+                  </button>
+                </Link>
               </div>
             </div>
-          );
-        })}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
