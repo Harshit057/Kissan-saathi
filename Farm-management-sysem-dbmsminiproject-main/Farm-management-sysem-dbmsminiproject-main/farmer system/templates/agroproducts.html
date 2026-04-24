@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Agro Products</title>
+    <style>
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background-image: url('/static/images/bg.jpg');  /* <-- your original image */
+            background-size: cover;
+            background-repeat: no-repeat;
+            background-attachment: fixed;
+            color: #fff;
+        }
+
+        .scroll-hint {
+            text-align: center;
+            font-size: 24px;
+            color: #fff;
+            margin-top: 20px;
+            animation: bounce 2s infinite;
+        }
+
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(10px); }
+        }
+
+        .product-container {
+            background-color: rgba(0, 0, 0, 0.6);  /* semi-transparent for readability */
+            padding: 30px;
+            border-radius: 10px;
+            width: 80%;
+            margin: 40px auto;
+        }
+
+        .product-card {
+            border: 1px solid #ccc;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 15px;
+            background-color: rgba(255, 255, 255, 0.1);
+        }
+
+        h1, h3, p {
+            text-align: center;
+        }
+
+        h1 {
+            margin-top: 30px;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Available Agro Products</h1>
+
+    <!-- Scroll Hint -->
+    <div class="scroll-hint">
+        ↓ Scroll Down
+    </div>
+
+    <!-- Section to Scroll To -->
+    <section id="products-section" class="product-container">
+        {% if query %}
+            {% for row in query %}
+                <div class="product-card">
+                    <h3>{{ row.productname }}</h3>
+                    <p>{{ row.productdesc }}</p>
+                    <p><strong>Price:</strong> ₹{{ row.price }}</p>
+                </div>
+            {% endfor %}
+        {% else %}
+            <p>No products available.</p>
+        {% endif %}
+    </section>
+
+</body>
+</html>

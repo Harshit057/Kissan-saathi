@@ -1,0 +1,82 @@
+{% extends 'base.html' %}
+{% block title %}
+Farmer Details
+{% endblock title %}
+
+{% block body %}
+
+<!-- Page Heading -->
+<h3 class="text-center text-white mt-4"><span>Farmer Details</span></h3>
+
+<!-- Scroll Down Indicator -->
+<div class="text-center mt-2">
+  <div class="scroll-down text-white" style="font-size: 24px; animation: bounce 2s infinite;">
+    ↓ Scroll Down
+  </div>
+</div>
+
+<!-- Bounce Animation Style -->
+<style>
+  html {
+    scroll-behavior: smooth;
+  }
+  @keyframes bounce {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(10px); }
+  }
+  .scroll-down {
+    font-weight: bold;
+    color: #fff;
+  }
+</style>
+
+<!-- Flash Messages -->
+{% with messages=get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    {% for category, message in messages %}
+      <div class="alert alert-{{category}} alert-dismissible fade show mt-3 container" role="alert">
+        {{message}}
+      </div>
+    {% endfor %}
+  {% endif %}
+{% endwith %}
+
+<!-- Farmer Table -->
+<div class="container mt-5">
+  <table class="table table-bordered table-hover bg-light text-dark rounded shadow">
+    <thead class="thead-dark">
+      <tr>
+        <th scope="col">RID</th>
+        <th scope="col">FARMER NAME</th>
+        <th scope="col">ADHAR NUMBER</th>
+        <th scope="col">AGE</th>
+        <th scope="col">GENDER</th>
+        <th scope="col">PHONE NUMBER</th>
+        <th scope="col">ADDRESS</th>
+        <th scope="col">FARMING</th>
+        <th scope="col">EDIT</th>
+        <th scope="col">DELETE</th>
+        <th scope="col">ADD AGRO PRODUCT</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for post in query %}
+      <tr>
+        <th scope="row">{{post.rid}}</th>
+        <td>{{post.farmername}}</td>
+        <td>{{post.adharnumber}}</td>
+        <td>{{post.age}}</td>
+        <td>{{post.gender}}</td>
+        <td>{{post.phonenumber}}</td>
+        <td>{{post.address}}</td>
+        <td>{{post.farming}}</td>
+        <td><a href="/edit/{{post.rid}}"><button class="btn btn-success">Edit</button></a></td>
+        <td><a href="/delete/{{post.rid}}" onclick="return confirm('Are you sure to Delete data');"><button class="btn btn-danger">Delete</button></a></td>
+        <td><a href="/addagroproduct"><button class="btn btn-primary">ADD</button></a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock body %}
