@@ -42,6 +42,10 @@ export const useAuthStore = create<AuthStore>()(
       setAuth: (user: User, token: string) => {
         if (typeof window !== 'undefined') {
           localStorage.setItem('ks_token', token);
+          // Persist language preference
+          if (user.language) {
+            localStorage.setItem('ks_language', user.language);
+          }
         }
         set({ user, token, isAuthenticated: true });
       },
@@ -50,14 +54,17 @@ export const useAuthStore = create<AuthStore>()(
       },
       setLanguage: (code: string) => {
         const currentUser = get().user;
-        if (currentUser) {
-          set({ user: { ...currentUser, language: code } });
+        const updatedUser = currentUser ? { ...currentUser, language: code } : { language: code };
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('ks_language', code);
         }
+        set({ user: updatedUser as User });
       },
       clearAuth: () => {
         if (typeof window !== 'undefined') {
           localStorage.removeItem('ks_token');
           localStorage.removeItem('auth-token');
+          localStorage.removeItem('ks_language');
         }
         set({ user: null, token: null, isAuthenticated: false, error: null });
       },
@@ -67,6 +74,7 @@ export const useAuthStore = create<AuthStore>()(
         if (typeof window !== 'undefined') {
           localStorage.removeItem('ks_token');
           localStorage.removeItem('auth-token');
+          localStorage.removeItem('ks_language');
         }
         set({ user: null, token: null, isAuthenticated: false, error: null });
       },

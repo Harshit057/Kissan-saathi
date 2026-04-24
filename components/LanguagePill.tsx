@@ -1,16 +1,15 @@
 'use client';
 
 import { LANGUAGES } from '@/lib/constants';
-import { useAuthStore } from '@/store/auth';
+import { useI18n } from '@/lib/i18n';
 import { ChevronDown } from 'lucide-react';
 import { useState } from 'react';
 
 export function LanguagePill() {
-  const { user, setLanguage } = useAuthStore();
+  const { language, setLanguage } = useI18n();
   const [isOpen, setIsOpen] = useState(false);
 
-  const currentLanguage = user?.language || 'hi';
-  const currentLangName = LANGUAGES.find((l) => l.code === currentLanguage)?.name || 'हिंदी';
+  const currentLangName = LANGUAGES.find((l) => l.code === language)?.name || 'English';
 
   return (
     <div className="relative">
@@ -23,7 +22,7 @@ export function LanguagePill() {
       </button>
 
       {isOpen && (
-        <div className="absolute top-full right-0 mt-2 bg-white border border-border rounded-lg shadow-lg z-50 min-w-40">
+        <div className="absolute top-full right-0 mt-2 bg-white border border-border rounded-lg shadow-lg z-50 min-w-40 max-h-96 overflow-y-auto">
           {LANGUAGES.map((lang) => (
             <button
               key={lang.code}
@@ -32,7 +31,7 @@ export function LanguagePill() {
                 setIsOpen(false);
               }}
               className={`w-full text-left px-4 py-3 text-base font-medium transition ${
-                currentLanguage === lang.code
+                language === lang.code
                   ? 'bg-primary/10 text-primary'
                   : 'hover:bg-muted text-foreground'
               }`}

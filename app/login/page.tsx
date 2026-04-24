@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useAuthStore } from '@/store/auth';
 import { useRouter } from 'next/navigation';
+import { useI18n } from '@/lib/i18n';
 import { LANGUAGES } from '@/lib/constants';
 import { Loader2, AlertCircle, Globe, ChevronRight, LogIn, UserPlus } from 'lucide-react';
 import { authService } from '@/lib/apiServices';
@@ -38,11 +39,11 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [role, setRole] = useState<'farmer' | 'consumer'>('farmer');
-  const [language, setLanguage] = useState('en');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
   const { setAuth } = useAuthStore();
+  const { language, setLanguage, t } = useI18n();
 
   // Clear error on step change
   useEffect(() => {
@@ -56,15 +57,20 @@ export default function LoginPage() {
 
     try {
       if (!/^[6-9]\d{9}$/.test(phone)) {
-        setError('Please enter a valid 10-digit Indian phone number');
+        setError(t('auth.invalid_phone'));
         setLoading(false);
         return;
       }
 
-      // Move to password step
-      setStep('password');
+      if (!isNewUser) {
+        // For login flow, go straight to password
+        setStep('password');
+      } else {
+        // For new user flow, go to role selection
+        setStep('role');
+      }
     } catch (err: any) {
-      setError('Unable to verify phone number');
+      setError(t('auth.verify_error'));
     } finally {
       setLoading(false);
     }
@@ -83,6 +89,7 @@ export default function LoginPage() {
 
       setAuth(user, response.access_token);
       localStorage.setItem('ks_token', response.access_token);
+      localStorage.setItem('ks_language', language);
       router.push('/dashboard');
     } catch (err: any) {
       if (err.response?.status === 401 || err.response?.status === 404) {
@@ -90,7 +97,7 @@ export default function LoginPage() {
         setIsNewUser(true);
         setStep('role');
       } else {
-        setError(err.response?.data?.detail || 'Login failed. Please try again.');
+        setError(err.response?.data?.detail || t('auth.login_failed'));
       }
     } finally {
       setLoading(false);
@@ -109,13 +116,13 @@ export default function LoginPage() {
 
     try {
       if (!name.trim()) {
-        setError('Please enter your name');
+        setError(t('auth.invalid_name'));
         setLoading(false);
         return;
       }
 
       if (password.length < 6) {
-        setError('Password must be at least 6 characters');
+        setError(t('auth.invalid_password'));
         setLoading(false);
         return;
       }
@@ -140,11 +147,12 @@ export default function LoginPage() {
         registerResponse.access_token
       );
       localStorage.setItem('ks_token', registerResponse.access_token);
+      localStorage.setItem('ks_language', language);
 
       // Redirect to onboarding for new users
       router.push('/onboarding');
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Registration failed. Please try again.');
+      setError(err.response?.data?.detail || t('auth.register_failed'));
     } finally {
       setLoading(false);
     }
@@ -161,10 +169,10 @@ export default function LoginPage() {
               <div className="inline-flex items-center justify-center w-24 h-24 bg-gradient-to-br from-primary to-primary/70 rounded-3xl shadow-lg">
                 <span className="text-6xl">🌾</span>
               </div>
-              <h1 className="text-5xl font-bold text-foreground">KisaanSathi</h1>
-              <p className="text-xl text-primary font-medium">आपका खेत, आपका भविष्य</p>
+              <h1 className="text-5xl font-bold text-foreground">{t('auth.welcome_title')}</h1>
+              <p className="text-xl text-primary font-medium">{t('auth.welcome_subtitle')}</p>
               <p className="text-muted-text text-lg max-w-md mx-auto">
-                Connect with farmers, discover fresh produce, and build a sustainable agricultural community
+                {t('auth.welcome_description')}
               </p>
             </div>
 
@@ -178,7 +186,7 @@ export default function LoginPage() {
                 className="w-full bg-primary text-white py-4 px-6 rounded-xl font-semibold hover:bg-primary/90 transition flex items-center justify-center gap-3 text-lg shadow-lg"
               >
                 <LogIn className="w-5 h-5" />
-                Login to Account
+                {t('auth.login_btn')}
               </button>
 
               <button
@@ -189,13 +197,13 @@ export default function LoginPage() {
                 className="w-full bg-white border-2 border-primary text-primary py-4 px-6 rounded-xl font-semibold hover:bg-primary/5 transition flex items-center justify-center gap-3 text-lg"
               >
                 <UserPlus className="w-5 h-5" />
-                Create New Account
+                {t('auth.signup_btn')}
               </button>
             </div>
 
             {/* Language Quick Access */}
             <div className="pt-8">
-              <p className="text-sm text-muted-text mb-4">Select or change language below</p>
+              <p className="text-sm text-muted-text mb-4">{t('auth.language_select')}</p>
               <div className="flex flex-wrap justify-center gap-2">
                 {LANGUAGES.slice(0, 6).map((lang) => (
                   <button
@@ -228,8 +236,8 @@ export default function LoginPage() {
             <div className="flex items-center gap-3 mb-6">
               <Globe className="w-8 h-8 text-primary" />
               <div>
-                <h2 className="text-2xl font-bold text-foreground">Select Your Language</h2>
-                <p className="text-sm text-muted-text">Choose from 22 Indian languages</p>
+                <h2 className="text-2xl font-bold text-foreground">{t('auth.language_title')}</h2>
+                <p className="text-sm text-muted-text">{t('auth.language_subtitle')}</p>
               </div>
             </div>
 
@@ -241,7 +249,7 @@ export default function LoginPage() {
               onClick={() => setStep('auth-type')}
               className="w-full bg-primary text-white py-3 rounded-lg font-semibold hover:bg-primary/90 transition flex items-center justify-center gap-2"
             >
-              Continue
+              {t('auth.continue')}
               <ChevronRight className="w-4 h-4" />
             </button>
 
@@ -249,7 +257,7 @@ export default function LoginPage() {
               onClick={() => setStep('welcome')}
               className="w-full text-primary font-semibold py-2 hover:underline"
             >
-              Back
+              {t('auth.back')}
             </button>
           </div>
         )}
@@ -301,9 +309,9 @@ export default function LoginPage() {
           <div className="bg-white rounded-2xl shadow-xl p-8 space-y-6">
             <div>
               <h2 className="text-2xl font-bold text-foreground">
-                {isNewUser ? 'Create Your Account' : 'Login to Your Account'}
+                {isNewUser ? t('auth.signup_title') : t('auth.login_title')}
               </h2>
-              <p className="text-sm text-muted-text mt-2">Language: {LANGUAGES.find((l) => l.code === language)?.name}</p>
+              <p className="text-sm text-muted-text mt-2">{t('auth.language_preference')}: {LANGUAGES.find((l) => l.code === language)?.name}</p>
             </div>
 
             {error && (
@@ -315,12 +323,12 @@ export default function LoginPage() {
 
             <form onSubmit={handlePhoneSubmit} className="space-y-5">
               <div>
-                <label className="block text-sm font-medium text-foreground mb-2">Phone Number</label>
+                <label className="block text-sm font-medium text-foreground mb-2">{t('auth.phone_label')}</label>
                 <div className="flex items-center bg-muted rounded-lg">
                   <span className="text-lg text-muted-text font-medium px-4">+91</span>
                   <input
                     type="tel"
-                    placeholder="98765 43210"
+                    placeholder={t('auth.phone_placeholder')}
                     value={phone}
                     onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
                     className="flex-1 px-4 py-3 bg-transparent focus:outline-none text-lg"
@@ -329,7 +337,7 @@ export default function LoginPage() {
                     autoFocus
                   />
                 </div>
-                <p className="text-xs text-muted-text mt-2">10-digit Indian mobile number</p>
+                <p className="text-xs text-muted-text mt-2">{t('auth.phone_hint')}</p>
               </div>
 
               <button
@@ -338,7 +346,7 @@ export default function LoginPage() {
                 className="w-full bg-primary text-white py-3 rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-primary/90 transition flex items-center justify-center gap-2"
               >
                 {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-                {loading ? 'Verifying...' : 'Continue'}
+                {loading ? t('auth.verifying') : t('auth.continue')}
               </button>
             </form>
 
@@ -347,7 +355,7 @@ export default function LoginPage() {
                 onClick={() => setStep('welcome')}
                 className="text-primary font-semibold hover:underline text-sm"
               >
-                Back to Welcome
+                {t('auth.back_welcome')}
               </button>
             </div>
           </div>
@@ -357,7 +365,7 @@ export default function LoginPage() {
         {step === 'password' && (
           <div className="bg-white rounded-2xl shadow-xl p-8 space-y-6">
             <div>
-              <h2 className="text-2xl font-bold text-foreground">Enter Your Password</h2>
+              <h2 className="text-2xl font-bold text-foreground">{t('auth.password_label')}</h2>
               <p className="text-sm text-muted-text mt-2">+91 {phone}</p>
             </div>
 
@@ -370,17 +378,17 @@ export default function LoginPage() {
 
             <form onSubmit={handlePasswordSubmit} className="space-y-5">
               <div>
-                <label className="block text-sm font-medium text-foreground mb-2">Password</label>
+                <label className="block text-sm font-medium text-foreground mb-2">{t('auth.password_label')}</label>
                 <input
                   type="password"
-                  placeholder="••••••••"
+                  placeholder={t('auth.password_placeholder')}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="w-full px-4 py-3 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
                   disabled={loading}
                   autoFocus
                 />
-                <p className="text-xs text-muted-text mt-2">Minimum 6 characters</p>
+                <p className="text-xs text-muted-text mt-2">{t('auth.password_hint')}</p>
               </div>
 
               <button
@@ -389,7 +397,7 @@ export default function LoginPage() {
                 className="w-full bg-primary text-white py-3 rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-primary/90 transition flex items-center justify-center gap-2"
               >
                 {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-                {loading ? 'Logging in...' : 'Login'}
+                {loading ? t('auth.logging_in') : t('auth.login')}
               </button>
             </form>
 
@@ -401,7 +409,7 @@ export default function LoginPage() {
               }}
               className="w-full text-primary font-semibold py-2 hover:underline text-sm"
             >
-              Use Different Phone Number
+              {t('auth.diff_phone')}
             </button>
           </div>
         )}
@@ -409,8 +417,8 @@ export default function LoginPage() {
         {/* Role Selection Step */}
         {step === 'role' && (
           <div className="bg-white rounded-2xl shadow-xl p-8 space-y-6">
-            <h2 className="text-2xl font-bold text-foreground">Who are you?</h2>
-            <p className="text-sm text-muted-text">Phone: +91 {phone}</p>
+            <h2 className="text-2xl font-bold text-foreground">{t('auth.who_are_you')}</h2>
+            <p className="text-sm text-muted-text">{t('auth.phone_info')}: +91 {phone}</p>
 
             {error && (
               <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex gap-3">
@@ -429,8 +437,8 @@ export default function LoginPage() {
                 <div className="flex items-start justify-between">
                   <div>
                     <div className="text-4xl mb-2">🌾</div>
-                    <h3 className="font-semibold text-foreground text-lg">I'm a Farmer</h3>
-                    <p className="text-sm text-muted-text mt-1">Grow, sell, and learn farming techniques</p>
+                    <h3 className="font-semibold text-foreground text-lg">{t('auth.farmer')}</h3>
+                    <p className="text-sm text-muted-text mt-1">{t('auth.farmer_desc')}</p>
                   </div>
                   {role === 'farmer' && <ChevronRight className="w-5 h-5 text-primary" />}
                 </div>
@@ -445,8 +453,8 @@ export default function LoginPage() {
                 <div className="flex items-start justify-between">
                   <div>
                     <div className="text-4xl mb-2">🛍️</div>
-                    <h3 className="font-semibold text-foreground text-lg">I'm a Consumer</h3>
-                    <p className="text-sm text-muted-text mt-1">Buy fresh produce directly from farmers</p>
+                    <h3 className="font-semibold text-foreground text-lg">{t('auth.consumer')}</h3>
+                    <p className="text-sm text-muted-text mt-1">{t('auth.consumer_desc')}</p>
                   </div>
                   {role === 'consumer' && <ChevronRight className="w-5 h-5 text-primary" />}
                 </div>
@@ -462,7 +470,7 @@ export default function LoginPage() {
               }}
               className="w-full text-primary font-semibold py-2 hover:underline text-sm"
             >
-              Use Different Phone Number
+              {t('auth.diff_phone')}
             </button>
           </div>
         )}
@@ -471,9 +479,9 @@ export default function LoginPage() {
         {step === 'profile' && (
           <div className="bg-white rounded-2xl shadow-xl p-8 space-y-6">
             <div>
-              <h2 className="text-2xl font-bold text-foreground">Create Your Profile</h2>
+              <h2 className="text-2xl font-bold text-foreground">{t('auth.create_profile')}</h2>
               <p className="text-sm text-muted-text mt-2">
-                Role: {role === 'farmer' ? '🌾 Farmer' : '🛍️ Consumer'}
+                {t('auth.role_info')}: {role === 'farmer' ? '🌾 ' + t('auth.farmer') : '🛍️ ' + t('auth.consumer')}
               </p>
             </div>
 
@@ -486,10 +494,10 @@ export default function LoginPage() {
 
             <form onSubmit={handleProfileSubmit} className="space-y-5">
               <div>
-                <label className="block text-sm font-medium text-foreground mb-2">Full Name *</label>
+                <label className="block text-sm font-medium text-foreground mb-2">{t('auth.name_label')} *</label>
                 <input
                   type="text"
-                  placeholder="Your full name"
+                  placeholder={t('auth.name_placeholder')}
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   className="w-full px-4 py-3 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
@@ -499,29 +507,29 @@ export default function LoginPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-foreground mb-2">Password *</label>
+                <label className="block text-sm font-medium text-foreground mb-2">{t('auth.password_label')} *</label>
                 <input
                   type="password"
-                  placeholder="••••••••"
+                  placeholder={t('auth.password_placeholder')}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="w-full px-4 py-3 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
                   disabled={loading}
                 />
-                <p className="text-xs text-muted-text mt-2">Minimum 6 characters, keep it secure</p>
+                <p className="text-xs text-muted-text mt-2">{t('auth.password_secure')}</p>
               </div>
 
               <div className="bg-blue-50 rounded-lg p-4 border border-blue-200 space-y-2 text-sm">
                 <div>
-                  <span className="text-muted-text">Phone: </span>
+                  <span className="text-muted-text">{t('auth.phone_info')}: </span>
                   <span className="font-semibold text-foreground">+91 {phone}</span>
                 </div>
                 <div>
-                  <span className="text-muted-text">Role: </span>
-                  <span className="font-semibold text-foreground">{role === 'farmer' ? '🌾 Farmer' : '🛍️ Consumer'}</span>
+                  <span className="text-muted-text">{t('auth.role_info')}: </span>
+                  <span className="font-semibold text-foreground">{role === 'farmer' ? '🌾 ' + t('auth.farmer') : '🛍️ ' + t('auth.consumer')}</span>
                 </div>
                 <div>
-                  <span className="text-muted-text">Language: </span>
+                  <span className="text-muted-text">{t('auth.language_preference')}: </span>
                   <span className="font-semibold text-foreground">{LANGUAGES.find((l) => l.code === language)?.name}</span>
                 </div>
               </div>
@@ -532,7 +540,7 @@ export default function LoginPage() {
                 className="w-full bg-primary text-white py-3 rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed hover:bg-primary/90 transition flex items-center justify-center gap-2"
               >
                 {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-                {loading ? 'Creating Account...' : 'Create Account'}
+                {loading ? t('auth.creating') : t('auth.create')}
               </button>
             </form>
 
@@ -543,7 +551,7 @@ export default function LoginPage() {
               }}
               className="w-full text-primary font-semibold py-2 hover:underline text-sm"
             >
-              Back
+              {t('auth.back')}
             </button>
           </div>
         )}
